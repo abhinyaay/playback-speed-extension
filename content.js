@@ -135,78 +135,82 @@ function injectSpeeds(menuPanel) {
     });
 }
 
-// Observer to watch for settings menu
+// Global observer to handle all dynamic updates
 const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+        // Check added nodes for the settings menu or panels
         if (mutation.addedNodes.length) {
             for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1 && node.classList && node.classList.contains('ytp-settings-menu')) {
-                    // The menu container appeared. Now watch for panels inside it.
-                    // Or maybe the panels are already there.
-                    const panels = node.querySelectorAll('.ytp-panel-menu');
-                    panels.forEach(injectSpeeds);
+                if (node.nodeType === 1) {
+                    // If the menu itself is added
+                    if (node.classList && node.classList.contains('ytp-settings-menu')) {
+                        handleMenu(node);
+                    }
+                    // If a panel is added inside the menu (submenu transition)
+                    if (node.classList && node.classList.contains('ytp-panel-menu')) {
+                        injectSpeeds(node);
+                    }
+                    // If menu items are added (lazy load or refresh)
+                    if (node.classList && node.classList.contains('ytp-menuitem')) {
+                        const panel = node.closest('.ytp-panel-menu');
+                        if (panel) injectSpeeds(panel);
+                    }
+                    // Check children just in case (e.g. a container of items was added)
+                    if (node.querySelectorAll) {
+                        const menus = node.querySelectorAll('.ytp-settings-menu');
+                        menus.forEach(handleMenu);
 
-                    // Also observe the menu for future panel changes (submenus)
-                    new MutationObserver((innerMutations) => {
-                        innerMutations.forEach(m => {
-                            m.addedNodes.forEach(n => {
-                                if (n.nodeType === 1 && n.classList && n.classList.contains('ytp-panel-menu')) {
-                                    injectSpeeds(n);
-                                }
-                                // Sometimes the content of the panel changes
-                                if (n.nodeType === 1 && n.querySelectorAll) {
-                                    const p = n.querySelector('.ytp-panel-menu');
-                                    if (p) injectSpeeds(p);
-                                }
-                            });
-                        });
-                    }).observe(node, { childList: true, subtree: true });
+                        const panels = node.querySelectorAll('.ytp-panel-menu');
+                        panels.forEach(injectSpeeds);
+                    }
                 }
             }
         }
     }
 });
 
-// Also listen for clicks on the settings button to handle cases where MutationObserver might miss
-// or if the menu is already in the DOM but hidden.
+function handleMenu(menuNode) {
+    // When menu appears, check its current panels
+    const panels = menuNode.querySelectorAll('.ytp-panel-menu');
+    panels.forEach(injectSpeeds);
+
+    // And observe it for future changes (submenu transitions)
+    // We use a WeakMap or set a flag to avoid double observing if possible, 
+    // but MutationObserver on the same node with same config is usually safe (deduplicated) or harmless if careful.
+    // However, to be safe, let's just rely on the global observer if it covers the subtree.
+    // If the global observer is on document.body with subtree:true, it will catch changes inside the menu too!
+    // So we might not need a nested observer if the main one is robust enough.
+}
+
+// Robust click listener for the settings button
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('.ytp-settings-button');
     if (btn) {
-        log('Settings button clicked, polling for menu...');
+        log('Settings button clicked, monitoring for speed menu...');
+        // Poll for a bit to catch the menu opening and subsequent interactions
         let attempts = 0;
         const poll = setInterval(() => {
             attempts++;
-            const menu = document.querySelector('.ytp-settings-menu');
-            if (menu) {
-                const panel = menu.querySelector('.ytp-panel-menu');
-                if (panel) {
-                    injectSpeeds(panel);
-                    clearInterval(poll);
-                }
-            }
-            if (attempts > 20) clearInterval(poll); // Stop after 2 seconds
+            // Try to find any open menu panels
+            const panels = document.querySelectorAll('.ytp-panel-menu');
+            panels.forEach(injectSpeeds);
+
+            // If we found the speed menu and injected, we could stop, but the user might switch back and forth.
+            // So let's just keep polling for a short while (e.g., 5 seconds) to cover the interaction.
+            if (attempts > 50) clearInterval(poll);
         }, 100);
     }
 });
 
-// Start observing
 function init() {
-    const player = document.querySelector('#movie_player') || document.body;
-    observer.observe(player, { childList: true, subtree: true });
-    log('Initialized observer');
+    // Observe the entire body to catch everything, including SPA navigations and player replacements
+    observer.observe(document.body, { childList: true, subtree: true });
+    log('Initialized global observer');
 }
 
-// Wait for page load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
     init();
 }
 
-// Also listen for navigation events (SPA)
-document.addEventListener('yt-navigate-finish', () => {
-    log('Navigation finished, re-initializing if needed');
-    // Re-attach if observer was lost, though observing body usually persists.
-    // But the player element might be replaced.
-    init();
-});
