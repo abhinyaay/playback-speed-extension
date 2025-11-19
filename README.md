@@ -25,5 +25,5 @@ A lightweight Chrome/Brave extension that adds more playback speed options to Yo
 3.  Select **Playback speed**.
 4.  Choose one of the new high-speed options (2.5x - 4x).
 
-## Publishing
-To publish this extension to the Chrome Web Store, zip the contents of this directory (excluding `.git` and other dev files) and upload it to the Chrome Developer Dashboard.
+## Screenshots
+![Speed Menu Preview](screenshots/menu_preview.png)
